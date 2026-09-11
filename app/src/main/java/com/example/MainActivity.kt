@@ -327,28 +327,33 @@ fun WordQuestApp(
                         soundManager.playTap()
                         completedLevelData = null
                         val nextId = lvl.id + 1
-                        val nextLevel = LevelRepository.getLevelById(nextId)
-                        activeLevel = nextLevel
-                        showLevelIntro = true
-                        currentScreen = ScreenState.MAP
-                        UnityAdsManager.onLevelFinished(activity) {}
+                        val nextLevel = LevelRepository.getLevelById(nextId) ?: LevelRepository.levels.first()
+                        UnityAdsManager.onLevelFinished(activity, levelId = lvl.id) {
+                            activeLevel = nextLevel
+                            showLevelIntro = true
+                            currentScreen = ScreenState.MAP
+                        }
                     },
                     onMap = {
                         soundManager.playTap()
                         completedLevelData = null
-                        currentScreen = ScreenState.MAP
-                        UnityAdsManager.onLevelFinished(activity) {}
+                        UnityAdsManager.onLevelFinished(activity, levelId = lvl.id) {
+                            currentScreen = ScreenState.MAP
+                        }
                     },
                     onHome = {
                         soundManager.playTap()
                         completedLevelData = null
-                        currentScreen = ScreenState.HOME
-                        UnityAdsManager.onLevelFinished(activity) {}
+                        UnityAdsManager.onLevelFinished(activity, levelId = lvl.id) {
+                            currentScreen = ScreenState.HOME
+                        }
                     },
                     onViewCollection = {
                         soundManager.playTap()
                         completedLevelData = null
-                        currentScreen = ScreenState.COLLECTION
+                        UnityAdsManager.onLevelFinished(activity, levelId = lvl.id) {
+                            currentScreen = ScreenState.COLLECTION
+                        }
                     }
                 )
             }

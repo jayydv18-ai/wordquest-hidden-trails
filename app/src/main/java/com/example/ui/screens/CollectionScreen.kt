@@ -47,7 +47,6 @@ import androidx.compose.ui.unit.sp
 import com.example.data.GameState
 import com.example.data.LevelRepository
 import com.example.model.Achievement
-import com.example.ads.UnityBannerAd
 import com.example.ui.theme.AdventureBlueDark
 import com.example.ui.theme.BoardBorder
 import com.example.ui.theme.GoldYellow
@@ -156,7 +155,7 @@ fun CollectionScreen(
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 60.dp),
+                contentPadding = PaddingValues(bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -165,16 +164,6 @@ fun CollectionScreen(
                     AchievementCard(achievement = ach, isUnlocked = isUnlocked)
                 }
             }
-        }
-
-        // Unity Banner Ad anchored at bottom of Collection screen
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .navigationBarsPadding()
-        ) {
-            UnityBannerAd()
         }
     }
 }

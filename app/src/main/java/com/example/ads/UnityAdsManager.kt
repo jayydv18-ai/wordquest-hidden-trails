@@ -3,19 +3,6 @@ package com.example.ads
 import android.app.Activity
 import android.content.Context
 import android.util.Log
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.unity3d.ads.IUnityAdsInitializationListener
 import com.unity3d.ads.IUnityAdsLoadListener
 import com.unity3d.ads.IUnityAdsShowListener
@@ -23,19 +10,16 @@ import com.unity3d.ads.UnityAds
 import com.unity3d.ads.UnityAds.UnityAdsLoadError
 import com.unity3d.ads.UnityAds.UnityAdsShowCompletionState
 import com.unity3d.ads.UnityAds.UnityAdsShowError
-import com.unity3d.services.banners.BannerErrorInfo
-import com.unity3d.services.banners.BannerView
-import com.unity3d.services.banners.UnityBannerSize
 
 object UnityAdsManager {
     private const val TAG = "UnityAdsManager"
 
+    // Unity Ads Project & Placement IDs
     const val GAME_ID = "6189204"
     const val INTERSTITIAL_AD_UNIT = "Interstitial_Android"
     const val REWARDED_AD_UNIT = "Rewarded_Android"
-    const val BANNER_AD_UNIT = "Banner_Android"
 
-    // Set testMode to false for live ads (or true if testing on debug device)
+    // Set testMode to false for live ads (true during development/testing)
     var testMode: Boolean = false
 
     private var isInitialized = false
@@ -43,10 +27,16 @@ object UnityAdsManager {
     private var isInterstitialReady = false
     private var isRewardedLoading = false
     private var isRewardedReady = false
+    private var isAdCurrentlyShowing = false
 
-    // Smart pacing: don't bombard player with interstitial ads after every single 10-second level
+    // Pacing controls
     private var levelsCompletedSinceLastInterstitial = 0
-    private const val INTERSTITIAL_FREQUENCY = 2 // Show every 2 completed levels
+    const val INTERSTITIAL_LEVEL_INTERVAL = 1 // Show after every completed level (1, 2, 3, 4, 5...)
+    private const val REWARDED_MIN_COOLDOWN_MS = 10_000L // 10s cooldown between rewarded ad requests
+
+    private var lastInterstitialShownTimestamp: Long = 0L
+    private var lastRewardedShownTimestamp: Long = 0L
+    private var lastAnyAdShownTimestamp: Long = 0L
 
     fun initialize(context: Context, testMode: Boolean = false) {
         if (isInitialized) return
@@ -59,7 +49,7 @@ object UnityAdsManager {
             object : IUnityAdsInitializationListener {
                 override fun onInitializationComplete() {
                     isInitialized = true
-                    Log.d(TAG, "Unity Ads initialized successfully")
+                    Log.d(TAG, "Unity Ads initialized successfully (Game ID: $GAME_ID)")
                     loadInterstitial(context.applicationContext)
                     loadRewarded(context.applicationContext)
                 }
@@ -72,6 +62,8 @@ object UnityAdsManager {
         )
     }
 
+    fun isSdkInitialized(): Boolean = isInitialized
+
     fun loadInterstitial(context: Context? = null) {
         if (!isInitialized || isInterstitialLoading) return
         isInterstitialLoading = true
@@ -82,7 +74,7 @@ object UnityAdsManager {
                 override fun onUnityAdsAdLoaded(placementId: String) {
                     isInterstitialLoading = false
                     isInterstitialReady = true
-                    Log.d(TAG, "Interstitial loaded: $placementId")
+                    Log.d(TAG, "Interstitial loaded successfully: $placementId")
                 }
 
                 override fun onUnityAdsFailedToLoad(
@@ -98,18 +90,30 @@ object UnityAdsManager {
         )
     }
 
+    fun isInterstitialAvailable(): Boolean = isInitialized && isInterstitialReady && !isAdCurrentlyShowing
+
+    /**
+     * Checks whether an interstitial ad is eligible to be shown after level completion.
+     * Ready to show after every level if the ad is loaded and no other ad is active.
+     */
+    fun canShowInterstitial(levelId: Int = 0): Boolean {
+        return isInitialized && isInterstitialReady && !isAdCurrentlyShowing
+    }
+
     fun showInterstitial(
         activity: Activity,
         onClosed: () -> Unit = {}
     ) {
-        if (!isInitialized || !isInterstitialReady) {
-            Log.d(TAG, "Interstitial ad not ready, proceeding")
+        if (!isInitialized || !isInterstitialReady || isAdCurrentlyShowing) {
+            Log.d(TAG, "Interstitial ad not ready or ad already showing, proceeding immediately")
             loadInterstitial(activity)
             onClosed()
             return
         }
 
         isInterstitialReady = false
+        isAdCurrentlyShowing = true
+
         UnityAds.show(
             activity,
             INTERSTITIAL_AD_UNIT,
@@ -127,6 +131,11 @@ object UnityAdsManager {
                     state: UnityAdsShowCompletionState
                 ) {
                     Log.d(TAG, "Interstitial completed: $placementId state: $state")
+                    isAdCurrentlyShowing = false
+                    val now = System.currentTimeMillis()
+                    lastInterstitialShownTimestamp = now
+                    lastAnyAdShownTimestamp = now
+                    levelsCompletedSinceLastInterstitial = 0
                     loadInterstitial(activity)
                     onClosed()
                 }
@@ -137,6 +146,7 @@ object UnityAdsManager {
                     message: String
                 ) {
                     Log.w(TAG, "Interstitial show failed: $placementId - $error: $message")
+                    isAdCurrentlyShowing = false
                     loadInterstitial(activity)
                     onClosed()
                 }
@@ -145,16 +155,16 @@ object UnityAdsManager {
     }
 
     /**
-     * Check if an interstitial should be presented based on gameplay pacing.
-     * Shows ad every [INTERSTITIAL_FREQUENCY] levels, avoiding intrusive spam.
+     * Trigger called after completing every level when user navigates (Next Level, Map, Home).
+     * Presents an interstitial ad after every level if available, then immediately preloads the next one.
      */
-    fun onLevelFinished(activity: Activity, onFinished: () -> Unit) {
+    fun onLevelFinished(activity: Activity, levelId: Int = 0, onFinished: () -> Unit) {
         levelsCompletedSinceLastInterstitial++
-        if (levelsCompletedSinceLastInterstitial >= INTERSTITIAL_FREQUENCY && isInterstitialReady) {
-            levelsCompletedSinceLastInterstitial = 0
+        Log.d(TAG, "Level $levelId finished. Showing interstitial after level completion.")
+
+        if (canShowInterstitial(levelId)) {
             showInterstitial(activity, onFinished)
         } else {
-            // If not showing ad this turn or ad not ready, proceed directly
             if (!isInterstitialReady && !isInterstitialLoading) {
                 loadInterstitial(activity)
             }
@@ -172,7 +182,7 @@ object UnityAdsManager {
                 override fun onUnityAdsAdLoaded(placementId: String) {
                     isRewardedLoading = false
                     isRewardedReady = true
-                    Log.d(TAG, "Rewarded ad loaded: $placementId")
+                    Log.d(TAG, "Rewarded ad loaded successfully: $placementId")
                 }
 
                 override fun onUnityAdsFailedToLoad(
@@ -188,27 +198,36 @@ object UnityAdsManager {
         )
     }
 
-    fun isRewardedAdReady(): Boolean = isInitialized && isRewardedReady
+    fun isRewardedAdReady(): Boolean = isInitialized && isRewardedReady && !isAdCurrentlyShowing
 
+    fun canShowRewarded(): Boolean {
+        if (!isInitialized || !isRewardedReady || isAdCurrentlyShowing) return false
+        val now = System.currentTimeMillis()
+        return (now - lastRewardedShownTimestamp) >= REWARDED_MIN_COOLDOWN_MS
+    }
+
+    /**
+     * Shows a rewarded video ad. Grants the reward ONLY if the user completes watching the ad.
+     */
     fun showRewarded(
         activity: Activity,
         onRewardEarned: () -> Unit,
         onAdDismissed: () -> Unit = {}
     ) {
-        if (!isInitialized || !isRewardedReady) {
-            Log.w(TAG, "Rewarded ad not ready")
+        if (!isInitialized || !isRewardedReady || isAdCurrentlyShowing) {
+            Log.w(TAG, "Rewarded ad not ready or ad already showing")
             loadRewarded(activity)
             onAdDismissed()
             return
         }
 
         isRewardedReady = false
+        isAdCurrentlyShowing = true
+
         UnityAds.show(
             activity,
             REWARDED_AD_UNIT,
             object : IUnityAdsShowListener {
-                private var userEarnedReward = false
-
                 override fun onUnityAdsShowStart(placementId: String) {
                     Log.d(TAG, "Rewarded ad show started: $placementId")
                 }
@@ -222,9 +241,16 @@ object UnityAdsManager {
                     state: UnityAdsShowCompletionState
                 ) {
                     Log.d(TAG, "Rewarded ad completed: $placementId state: $state")
+                    isAdCurrentlyShowing = false
+                    val now = System.currentTimeMillis()
+                    lastRewardedShownTimestamp = now
+                    lastAnyAdShownTimestamp = now
+
                     if (state == UnityAdsShowCompletionState.COMPLETED) {
-                        userEarnedReward = true
+                        Log.d(TAG, "Rewarded ad fully completed. Awarding reward.")
                         onRewardEarned()
+                    } else {
+                        Log.d(TAG, "Rewarded ad skipped or incomplete. No reward awarded.")
                     }
                     loadRewarded(activity)
                     onAdDismissed()
@@ -236,73 +262,41 @@ object UnityAdsManager {
                     message: String
                 ) {
                     Log.w(TAG, "Rewarded ad show failed: $placementId - $error: $message")
+                    isAdCurrentlyShowing = false
                     loadRewarded(activity)
                     onAdDismissed()
                 }
             }
         )
     }
-}
 
-/**
- * Composable Banner ad container that embeds the Unity BannerView cleanly.
- * Designed to fit standard 320x50 dimensions without interfering with user interaction.
- */
-@Composable
-fun UnityBannerAd(
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val activity = context as? Activity ?: return
-
-    val bannerView = remember {
-        BannerView(activity, UnityAdsManager.BANNER_AD_UNIT, UnityBannerSize(320, 50)).apply {
-            listener = object : BannerView.IListener {
-                override fun onBannerLoaded(bannerAdView: BannerView) {
-                    Log.d("UnityBannerAd", "Banner loaded successfully")
-                }
-
-                override fun onBannerShown(bannerAdView: BannerView) {
-                    Log.d("UnityBannerAd", "Banner shown")
-                }
-
-                override fun onBannerFailedToLoad(
-                    bannerAdView: BannerView,
-                    errorInfo: BannerErrorInfo
-                ) {
-                    Log.w("UnityBannerAd", "Banner failed to load: ${errorInfo.errorMessage}")
-                }
-
-                override fun onBannerClick(bannerAdView: BannerView) {
-                    Log.d("UnityBannerAd", "Banner clicked")
-                }
-
-                override fun onBannerLeftApplication(bannerAdView: BannerView) {
-                    Log.d("UnityBannerAd", "Banner left application")
-                }
-            }
-        }
-    }
-
-    DisposableEffect(bannerView) {
-        bannerView.load()
-        onDispose {
-            bannerView.destroy()
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(52.dp)
-            .background(Color(0xFF0F1B2B)),
-        contentAlignment = Alignment.Center
+    /**
+     * Convenience wrapper for Rewarded Ad to earn +1 Hint
+     */
+    fun showRewardedForHint(
+        activity: Activity,
+        onRewardEarned: () -> Unit,
+        onAdDismissed: () -> Unit = {}
     ) {
-        AndroidView(
-            factory = { bannerView },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
+        showRewarded(
+            activity = activity,
+            onRewardEarned = onRewardEarned,
+            onAdDismissed = onAdDismissed
+        )
+    }
+
+    /**
+     * Convenience wrapper for Rewarded Ad to earn +50 Bonus Coins
+     */
+    fun showRewardedForCoins(
+        activity: Activity,
+        onRewardEarned: () -> Unit,
+        onAdDismissed: () -> Unit = {}
+    ) {
+        showRewarded(
+            activity = activity,
+            onRewardEarned = onRewardEarned,
+            onAdDismissed = onAdDismissed
         )
     }
 }

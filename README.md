@@ -34,9 +34,8 @@ The app integrates **Unity Ads Android SDK (v4.12.5)** with balanced, player-fri
 
 | Ad Type | Placement | Trigger & Benefit |
 |---|---|---|
-| **Banner Ad** | `Banner_Android` | Fixed at bottom of **Map Screen** & **Collection Screen** |
 | **Rewarded Video** | `Rewarded_Android` | **Reward Vault**: +50 Free Coins or +1 Free Hint<br>**Gameplay**: Free hint when tokens run out<br>**Level Complete**: +50 Bonus Coins |
-| **Interstitial Ad** | `Interstitial_Android` | Natural screen transitions (paced every 2 completed levels) |
+| **Interstitial Ad** | `Interstitial_Android` | Natural screen transitions after every completed level (Next Level, Map, Home) |
 
 * **Unity Game ID**: `6189204`
 * **Ad Configuration**: Managed centrally in `com.example.ads.UnityAdsManager`

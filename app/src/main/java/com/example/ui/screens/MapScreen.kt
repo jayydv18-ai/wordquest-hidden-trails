@@ -58,7 +58,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import com.example.ads.UnityBannerAd
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -333,7 +332,7 @@ fun MapScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = 60.dp)
+                .padding(bottom = 16.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -367,16 +366,6 @@ fun MapScreen(
                     )
                 }
             }
-        }
-
-        // Unity Banner Ad anchored at the bottom of Map screen
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .navigationBarsPadding()
-        ) {
-            UnityBannerAd()
         }
     }
 }
