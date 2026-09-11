@@ -1,0 +1,6 @@
+{
+  "name": "WordQuest",
+  "description": "WordQuest: Hidden Trails - A premium word-search adventure game with infinite scrolling world map trail, 100 coin level rewards, 25 coin hint purchases, and daily puzzles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
