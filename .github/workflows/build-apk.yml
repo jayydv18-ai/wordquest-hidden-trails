@@ -61,6 +61,9 @@ jobs:
           echo "=== Checking debug keystore ==="
           if [ -f "./debug.keystore" ]; then
             echo "debug.keystore already exists."
+          elif [ -f "./debug.keystore.base64" ]; then
+            echo "Restoring persistent debug keystore from debug.keystore.base64..."
+            base64 -d ./debug.keystore.base64 > ./debug.keystore
           else
             echo "Generating temporary debug keystore..."
             keytool -genkeypair \
@@ -79,7 +82,7 @@ jobs:
             echo "ERROR: debug.keystore was not created or does not exist." >&2
             exit 1
           fi
-          echo "Temporary debug keystore verified."
+          echo "Debug keystore verified."
 
       - name: Build debug APK
         run: |
